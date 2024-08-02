@@ -7,7 +7,7 @@ namespace ToDo.Services
 {
     public class TokenService
     {
-        private readonly string _key;
+        private readonly string? _key;
         private readonly string _issuer;
         private readonly string _audience;
 

@@ -13,9 +13,9 @@ namespace ToDo.Services
     public interface IUserService
     {
         Task<string> RegisterAsync(RegisterModel model);
-        Task<bool> ValidateUserAsync(string username, string password);
-      
+        Task<bool> ValidateUserAsync(string username, string password, string email);
     }
+
 
     public class UserService : IUserService
     {
@@ -32,7 +32,7 @@ namespace ToDo.Services
         {
             // Kullanıcı adı veya e-posta kontrolü
             var existingUser = await _context.Users
-                .FirstOrDefaultAsync(u => u.Username == model.Username);
+                .FirstOrDefaultAsync(u => u.Username == model.Username || u.Email == model.Email);
 
             if (existingUser != null)
             {
@@ -45,106 +45,31 @@ namespace ToDo.Services
                 Username = model.Username,
                 Email = model.Email,
                 PasswordHash = HashPassword(model.Password),
+                IsEmailConfirmed = false // E-posta henüz doğrulanmadı
             };
 
             await _context.Users.AddAsync(user);
             await _context.SaveChangesAsync();
 
-            // Token oluşturma
-            var claims = new[]
-            {
-                new Claim(ClaimTypes.Name, user.Username)
-            };
-
-            var token = _tokenService.GenerateToken(claims);
-            return token;
+            return "Registration successful! Please check your email to confirm your account.";
         }
+
 
         private string HashPassword(string password)
         {
             return BCrypt.Net.BCrypt.HashPassword(password);
         }
 
-        public async Task<bool> ValidateUserAsync(string username, string password)
+
+        public async Task<bool> ValidateUserAsync(string username, string password, string email)
         {
-            var user = await _context.Users.SingleOrDefaultAsync(u => u.Username == username);
-            if (user == null)
-                return false;
+            var user = await _context.Users
+                                     .SingleOrDefaultAsync(u => u.Username == username && u.Email == email);
+
 
             var isPasswordValid = BCrypt.Net.BCrypt.Verify(password, user.PasswordHash);
             return isPasswordValid;
         }
 
-
-        private string GenerateEmailToken(int userId)
-        {
-            // E-posta token'ı oluşturma işlemi
-            var tokenHandler = new JwtSecurityTokenHandler();
-            var key = Encoding.ASCII.GetBytes("YourSecretKeyHere"); // Güvenlik anahtarı
-            var tokenDescriptor = new SecurityTokenDescriptor
-            {
-                Subject = new ClaimsIdentity(new[]
-                {
-                    new Claim(ClaimTypes.NameIdentifier, userId.ToString())
-                }),
-                Expires = DateTime.UtcNow.AddHours(1),
-                SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
-            };
-            var token = tokenHandler.CreateToken(tokenDescriptor);
-            return tokenHandler.WriteToken(token);
-        }
-
-        private int? DecodeEmailToken(string token)
-        {
-            var tokenHandler = new JwtSecurityTokenHandler();
-            var key = Encoding.ASCII.GetBytes("YourSecretKeyHere"); // Güvenlik anahtarı
-            try
-            {
-                var principal = tokenHandler.ValidateToken(token, new TokenValidationParameters
-                {
-                    ValidateIssuerSigningKey = true,
-                    IssuerSigningKey = new SymmetricSecurityKey(key),
-                    ValidateIssuer = false,
-                    ValidateAudience = false
-                }, out SecurityToken securityToken);
-
-                var userIdClaim = principal.FindFirst(ClaimTypes.NameIdentifier);
-                return userIdClaim != null ? int.Parse(userIdClaim.Value) : (int?)null;
-            }
-            catch
-            {
-                return null;
-            }
-        }
-
-        private void SendConfirmationEmail(string email, string token)
-        {
-            // E-posta gönderme işlemi
-            var confirmationLink = $"https://yourdomain.com/api/account/confirmemail?token={token}";
-
-            var fromAddress = new MailAddress("no-reply@yourdomain.com", "YourAppName");
-            var toAddress = new MailAddress(email);
-            const string fromPassword = "yourpassword"; // Bu parola genellikle uygulamanın e-posta hesabına ait
-            const string subject = "Confirm your email";
-            string body = $"Please confirm your account by clicking this link: {confirmationLink}";
-
-            var smtp = new SmtpClient
-            {
-                Host = "smtp.yourdomain.com",
-                Port = 587,
-                EnableSsl = true,
-                DeliveryMethod = SmtpDeliveryMethod.Network,
-                UseDefaultCredentials = false,
-                Credentials = new NetworkCredential(fromAddress.Address, fromPassword)
-            };
-            using (var message = new MailMessage(fromAddress, toAddress)
-            {
-                Subject = subject,
-                Body = body
-            })
-            {
-                smtp.Send(message);
-            }
-        }
     }
 }
